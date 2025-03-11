@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shipping Logistics Tracker</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#5D5CDE',
+                        success: '#10B981',
+                        warning: '#F59E0B',
+                        danger: '#EF4444',
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        #map {
+            height: 75vh;
+            width: 100%;
+            border-radius: 0.5rem;
+        }
+        .info-tooltip {
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 15px;
+            min-width: 300px;
+            max-width: 400px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+            font-size: 14px;
+            line-height: 1.4;
+            z-index: 1000;
+        }
+        .dark .info-tooltip {
+            background-color: rgba(33, 33, 33, 0.95);
+            color: #fff;
+            border-color: #444;
+        }
+        .port-marker {
+            border-radius: 50%;
+            border: 2px solid white;
+            width: 12px !important;
+            height: 12px !important;
+            margin-left: -6px !important;
+            margin-top: -6px !important;
+            transition: all 0.3s ease;
+        }
+        .port-marker.pol {
+            background-color: #5D5CDE; /* Blue for Port of Loading */
+        }
+        .port-marker.pod {
+            background-color: #9333EA; /* Purple for Port of Discharge */
+        }
+        .port-marker.rail {
+            background-color: #F59E0B; /* Orange for Rail Yard */
+        }
+        .port-marker.dest {
+            background-color: #10B981; /* Green for Destination */
+        }
+        .port-marker:hover {
+            background-color: #ffa500;
+            width: 16px !important;
+            height: 16px !important;
+            margin-left: -8px !important;
+            margin-top: -8px !important;
+        }
+        .dark .port-marker {
+            border-color: #333;
+        }
+        .ship-marker {
+            background-color: #10B981;
+            border-radius: 50%;
+            border: 2px solid white;
+            width: 10px !important;
+            height: 10px !important;
+            margin-left: -5px !important;
+            margin-top: -5px !important;
+        }
+        .dark .ship-marker {
+            border-color: #333;
+        }
+        .ship-path {
+            stroke: #5D5CDE;
+            stroke-width: 2;
+            stroke-dasharray: 5, 5;
+            opacity: 0.7;
+        }
+        
+        /* Animation for route highlighting */
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -20;
+            }
+        }
+        
+        @keyframes dashReverse {
+            to {
+                stroke-dashoffset: 20;
+            }
+        }
+        
+        @keyframes pulse {
+            0% {
+                stroke-width: 2;
+                stroke-opacity: 0.7;
+            }
+            50% {
+                stroke-width: 3;
+                stroke-opacity: 1;
+            }
+            100% {
+                stroke-width: 2;
+                stroke-opacity: 0.7;
+            }
+        }
+        
+        @keyframes glow {
+            0% {
+                filter: drop-shadow(0 0 0px rgba(93, 92, 222, 0));
+            }
+            50% {
+                filter: drop-shadow(0 0 3px rgba(93, 92, 222, 0.7));
+            }
+            100% {
+                filter: drop-shadow(0 0 0px rgba(93, 92, 222, 0));
+            }
+        }
+        
+        .route-animated {
+            animation: dash 1s linear infinite, pulse 2s ease-in-out infinite;
+        }
+        .delay-indicator {
+            background-color: #EF4444;
+            color: white;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: inline-block;
+            margin-left: 5px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+        .status-badge.transit {
+            background-color: #10B981;
+            color: white;
+        }
+        .status-badge.delayed {
+            background-color: #EF4444;
+            color: white;
+        }
+        .status-badge.delivered {
+            background-color: #6366F1;
+            color: white;
+        }
+        .status-badge.processing {
+            background-color: #F59E0B;
+            color: white;
+        }
+        .timeline {
+            margin: 10px 0;
+            padding-left: 20px;
+            border-left: 2px solid #5D5CDE;
+        }
+        .timeline-item {
+            position: relative;
+            padding-bottom: 10px;
+            padding-left: 15px;
+        }
+        .timeline-item:before {
+            content: '';
+            position: absolute;
+            left: -26px;
+            top: 5px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #5D5CDE;
+        }
+        .timeline-item.delay:before {
+            background-color: #EF4444;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            border-bottom: 1px dotted rgba(156, 163, 175, 0.2);
+            padding-bottom: 4px;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #5D5CDE;
+        }
+        .dark .detail-label {
+            color: #8C8DFF;
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div class="container mx-auto px-4 py-6">
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-primary">Shipping Logistics Tracker</h1>
+            <p class="text-gray-600 dark:text-gray-400 mt-2">Hover over locations to view detailed shipping information</p>
+        </header>
+        
+        <div class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg mb-4">
+            <div class="flex flex-wrap gap-4 items-center mb-3">
+                <div>
+                    <span class="font-semibold">Orders:</span>
+                    <span class="ml-2 bg-primary text-white px-3 py-1 rounded text-sm">2</span>
+                </div>
+                <div>
+                    <span class="font-semibold">Active Shipments:</span>
+                    <span class="ml-2 bg-success text-white px-3 py-1 rounded text-sm">2</span>
+                </div>
+                <div>
+                    <span class="font-semibold">Delayed:</span>
+                    <span class="ml-2 bg-danger text-white px-3 py-1 rounded text-sm">1</span>
+                </div>
+            </div>
+            
+            <div class="mt-2 border-t border-gray-200 dark:border-gray-700 pt-3">
+                <div class="text-sm font-semibold mb-2">Order Routes:</div>
+                <div class="flex flex-wrap gap-2">
+                    <button id="order-all" class="px-3 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-primary hover:text-white rounded-lg text-sm font-medium transition-colors duration-200 active">All Orders</button>
+                    <button id="order-1007988897" class="px-3 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-primary hover:text-white rounded-lg text-sm font-medium transition-colors duration-200">PI# 1007988897 - Charleston Route</button>
+                    <button id="order-1007989785" class="px-3 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-primary hover:text-white rounded-lg text-sm font-medium transition-colors duration-200">PI# 1007989785 - Long Beach → Rail Route <span class="text-xs bg-red-500 text-white px-1 rounded ml-1">Delayed</span></button>
+                </div>
+            </div>
+            
+            <div class="mt-3 text-xs flex items-center flex-wrap gap-3">
+                <div class="flex items-center">
+                    <span class="w-3 h-3 inline-block rounded-full bg-[#5D5CDE] mr-1"></span>
+                    <span>Port of Loading</span>
+                </div>
+                <div class="flex items-center">
+                    <span class="w-3 h-3 inline-block rounded-full bg-[#9333EA] mr-1"></span>
+                    <span>Port of Discharge</span>
+                </div>
+                <div class="flex items-center">
+                    <span class="w-3 h-3 inline-block rounded-full bg-[#F59E0B] mr-1"></span>
+                    <span>Rail Yard</span>
+                </div>
+                <div class="flex items-center">
+                    <span class="w-3 h-3 inline-block rounded-full bg-[#10B981] mr-1"></span>
+                    <span>Delivery Destination</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="map" class="shadow-md"></div>
+        
+        <div class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+            <p>Displaying shipping order information for PI# 1007988897 and 1007989785. Hover over markers to view logistics details.</p>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Detect dark mode preference
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+            updateMapTiles();
+        });
+
+        // Initialize map
+        const map = L.map('map').setView([25, -90], 3);
+        let currentTileLayer;
+
+        function updateMapTiles() {
+            const isDarkMode = document.documentElement.classList.contains('dark');
+            
+            if (currentTileLayer) {
+                map.removeLayer(currentTileLayer);
+            }
+            
+            if (isDarkMode) {
+                currentTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                    maxZoom: 19
+                });
+            } else {
+                currentTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                    maxZoom: 19
+                });
+            }
+            
+            currentTileLayer.addTo(map);
+        }
+        
+        updateMapTiles();
+
+        // Port location data
+        const portData = [
+            {
+                name: "Cai Mep Port",
+                location: [10.56378488, 107.0593174],
+                address: "AH17, Tân Phước, Tân Thành, Bà Rịa - Vũng Tàu, Vietnam",
+                city: "Tân Thành",
+                state: "Bà Rịa - Vũng Tàu",
+                country: "Vietnam",
+                type: "Port of Loading",
+                orders: ["1007988897", "1007989785"]
+            },
+            {
+                name: "Port of Charleston",
+                location: [32.83035, -79.93092],
+                address: "charleston, SC",
+                city: "Charleston",
+                state: "SC",
+                country: "USA",
+                type: "Port of Discharge",
+                orders: ["1007988897"]
+            },
+            {
+                name: "Pacific Container Terminal, Long Beach",
+                location: [33.74242987, -118.1897557],
+                address: "1521 Pier J Avenue Long Beach",
+                city: "Long Beach",
+                state: "CA",
+                zipCode: "90802",
+                country: "USA",
+                type: "Port of Discharge",
+                orders: ["1007989785"]
+            },
+            {
+                name: "BNSF Railway Company",
+                location: [32.99018438, -97.34962076],
+                address: "1111 Intermodal Pkwy",
+                city: "Haslet",
+                state: "TX",
+                country: "USA",
+                type: "Rail Yard",
+                orders: ["1007989785"]
+            },
+            {
+                name: "Huntersville, NC",
+                location: [35.410694, -80.842911],
+                city: "Huntersville",
+                state: "NC",
+                zipCode: "28078",
+                country: "USA",
+                type: "Delivery Destination",
+                orders: ["1007988897"]
+            },
+            {
+                name: "Oklahoma City, OK",
+                location: [35.482309, -97.534994],
+                city: "Oklahoma City",
+                state: "OK",
+                zipCode: "73179",
+                country: "USA",
+                type: "Delivery Destination",
+                orders: ["1007989785"]
+            }
+        ];
+
+        // Order data
+        const orderData = [
+            {
+                PI: "1007988897",
+                PO: "9000753",
+                container: "EGHU8506410",
+                customer: "202534",
+                deliveryMethod: "live unload",
+                shippingLine: "EMC",
+                vessel: "CMA CGM HERMES 1TU9MS1MA",
+                POL: "Cai Mep",
+                POD: "Charleston,SC",
+                deliveryAddress: "Huntersville,NC 28078",
+                requestedDeliveryDate: "2025-02-28",
+                ETD: "2024-08-27",
+                ETA: "2024-11-05",
+                actualArrivalDate: "2024-11-05",
+                dateOfDischarge: "2024-11-06",
+                availableDate: "2024-11-06",
+                pickUpDate: "2024-11-12",
+                actualDeliveryDate: "2024-11-12",
+                emptyReturnDate: "2024-11-13",
+                status: "In Transit",
+                statusBadge: "transit",
+                hasDelay: false,
+                locations: [
+                    {
+                        name: "Cai Mep Port",
+                        date: "2024-08-27",
+                        event: "Estimated Time of Departure (ETD)",
+                        status: "Completed"
+                    },
+                    {
+                        name: "Port of Charleston",
+                        date: "2024-11-05",
+                        event: "Estimated Time of Arrival (ETA)",
+                        status: "In Progress"
+                    },
+                    {
+                        name: "Port of Charleston",
+                        date: "2024-11-06",
+                        event: "Date of Discharge",
+                        status: "Scheduled"
+                    },
+                    {
+                        name: "Port of Charleston",
+                        date: "2024-11-06",
+                        event: "Available for Pickup",
+                        status: "Scheduled"
+                    },
+                    {
+                        name: "Port of Charleston",
+                        date: "2024-11-12",
+                        event: "Container Pickup",
+                        status: "Scheduled"
+                    },
+                    {
+                        name: "Huntersville, NC",
+                        date: "2024-11-12",
+                        event: "Delivery",
+                        status: "Scheduled"
+                    }
+                ]
+            },
+            {
+                PI: "1007989785",
+                PO: "9000765",
+                container: "MBCU4908432",
+                customer: "202534",
+                deliveryMethod: "live unload",
+                shippingLine: "OOCL",
+                vessel: "OOCL KOREA 048E",
+                POL: "Cai Mep",
+                POD: "Long Beach,CA",
+                railYard: "Dallas,TX",
+                deliveryAddress: "Oklahoma City,OK 73179",
+                requestedDeliveryDate: "2025-02-28",
+                ETD: "2024-09-02",
+                ETA: "2024-10-11",
+                ETARail: "2024-10-26",
+                ETADoor: "2024-10-28",
+                actualArrivalDate: "2024-10-11",
+                dateOfDischarge: "2024-10-13",
+                actualOnRailDate: "2024-10-21",
+                actualTrainArrivalDate: "2024-10-26",
+                availableDate: "2024-10-31",
+                originalDeliveryDate: "2024-10-30",
+                updatedDeliveryDate: "2024-11-07",
+                pickUpDate: "2024-11-02",
+                actualDeliveryDate: "2024-11-07",
+                emptyReturnDate: "2024-11-08",
+                status: "Delivered with Delay",
+                statusBadge: "delayed",
+                hasDelay: true,
+                delayReason: "not ground from the rail",
+                locations: [
+                    {
+                        name: "Cai Mep Port",
+                        date: "2024-09-02",
+                        event: "Estimated Time of Departure (ETD)",
+                        status: "Completed"
+                    },
+                    {
+                        name: "Pacific Container Terminal, Long Beach",
+                        date: "2024-10-11",
+                        event: "Estimated Time of Arrival (ETA)",
+                        status: "Completed"
+                    },
+                    {
+                        name: "Pacific Container Terminal, Long Beach",
+                        date: "2024-10-13",
+                        event: "Date of Discharge",
+                        status: "Completed"
+                    },
+                    {
+                        name: "Pacific Container Terminal, Long Beach",
+                        date: "2024-10-21",
+                        event: "Actual On Rail Date",
+                        status: "Completed"
+                    },
+                    {
+                        name: "BNSF Railway Company",
+                        date: "2024-10-26",
+                        event: "Actual Train Arrival Date",
+                        status: "Completed"
+                    },
+                    {
+                        name: "BNSF Railway Company",
+                        date: "2024-10-31",
+                        event: "Available for Pickup",
+                        status: "Completed"
+                    },
+                    {
+                        name: "BNSF Railway Company",
+                        date: "2024-11-02",
+                        event: "Container Pickup",
+                        status: "Completed"
+                    },
+                    {
+                        name: "Oklahoma City, OK",
+                        date: "2024-10-30",
+                        event: "Original Delivery Date",
+                        status: "Cancelled",
+                        isDelay: true
+                    },
+                    {
+                        name: "Oklahoma City, OK",
+                        date: "2024-11-07",
+                        event: "Updated Delivery Date (DELAYED)",
+                        status: "Completed",
+                        isDelay: true
+                    },
+                    {
+                        name: "Oklahoma City, OK",
+                        date: "2024-11-08",
+                        event: "Empty Container Return",
+                        status: "Completed"
+                    }
+                ]
+            }
+        ];
+
+        // Custom marker icons for different location types
+        const polIcon = L.divIcon({
+            className: 'port-marker pol',
+            iconSize: [12, 12]
+        });
+        
+        const podIcon = L.divIcon({
+            className: 'port-marker pod',
+            iconSize: [12, 12]
+        });
+        
+        const railIcon = L.divIcon({
+            className: 'port-marker rail',
+            iconSize: [12, 12]
+        });
+        
+        const destIcon = L.divIcon({
+            className: 'port-marker dest',
+            iconSize: [12, 12]
+        });
+
+        const shipIcon = L.divIcon({
+            className: 'ship-marker',
+            iconSize: [10, 10]
+        });
+
+        // Create marker groups for organization
+        const portMarkers = L.layerGroup().addTo(map);
+        const routeLines = L.layerGroup().addTo(map);
+
+        // Create and add markers for each port/location
+        portData.forEach(port => {
+            // Select the appropriate icon based on location type
+            let icon;
+            if (port.type === "Port of Loading") {
+                icon = polIcon;
+            } else if (port.type === "Port of Discharge") {
+                icon = podIcon;
+            } else if (port.type === "Rail Yard") {
+                icon = railIcon;
+            } else if (port.type === "Delivery Destination") {
+                icon = destIcon;
+            }
+            
+            const marker = L.marker(port.location, { icon: icon }).addTo(portMarkers);
+            
+            // Find orders for this port
+            const portOrders = orderData.filter(order => port.orders.includes(order.PI));
+            
+            // Create tooltip content
+            let tooltipContent = `
+                <div class="info-tooltip">
+                    <h3 class="font-bold text-lg text-primary">${port.name}</h3>
+                    <p class="text-sm mb-2">${port.type} - ${port.city}, ${port.state}, ${port.country}</p>
+                    <hr class="my-2 border-gray-200 dark:border-gray-700">
+            `;
+            
+            // Add order information to tooltip
+            if (portOrders.length > 0) {
+                portOrders.forEach(order => {
+                    // Find events at this location
+                    const locationEvents = order.locations.filter(loc => loc.name === port.name);
+                    
+                    tooltipContent += `
+                        <div class="p-2 mb-3 bg-gray-50 dark:bg-gray-800 rounded">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <h4 class="font-bold">Order PI# ${order.PI}</h4>
+                                    <p class="text-sm">PO# ${order.PO} - Container ${order.container}</p>
+                                </div>
+                                <div>
+                                    <span class="status-badge ${order.statusBadge}">${order.status}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-3">
+                                <div class="detail-row">
+                                    <span class="detail-label">Vessel/Voyage:</span>
+                                    <span>${order.vessel}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Shipping Line:</span>
+                                    <span>${order.shippingLine}</span>
+                                </div>
+                    `;
+                    
+                    // Add rail info if available
+                    if (order.railYard && port.type === "Rail Yard") {
+                        tooltipContent += `
+                            <div class="detail-row">
+                                <span class="detail-label">ETD Rail:</span>
+                                <span>${formatDate(order.ETARail)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Actual Train Arrival:</span>
+                                <span>${formatDate(order.actualTrainArrivalDate)}</span>
+                            </div>
+                        `;
+                    }
+                    
+                    // Add port-specific info
+                    if (port.type === "Port of Loading") {
+                        tooltipContent += `
+                            <div class="detail-row">
+                                <span class="detail-label">ETD:</span>
+                                <span>${formatDate(order.ETD)}</span>
+                            </div>
+                        `;
+                    }
+                    
+                    if (port.type === "Port of Discharge") {
+                        tooltipContent += `
+                            <div class="detail-row">
+                                <span class="detail-label">ETA:</span>
+                                <span>${formatDate(order.ETA)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Date of Discharge:</span>
+                                <span>${formatDate(order.dateOfDischarge)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Available Date:</span>
+                                <span>${formatDate(order.availableDate)}</span>
+                            </div>
+                        `;
+                    }
+                    
+                    if (port.type === "Delivery Destination") {
+                        tooltipContent += `
+                            <div class="detail-row">
+                                <span class="detail-label">Requested Delivery:</span>
+                                <span>${formatDate(order.requestedDeliveryDate)}</span>
+                            </div>
+                        `;
+                        
+                        if (order.hasDelay) {
+                            tooltipContent += `
+                                <div class="detail-row">
+                                    <span class="detail-label">Original Delivery:</span>
+                                    <span>${formatDate(order.originalDeliveryDate)}</span>
+                                </div>
+                                <div class="detail-row text-danger">
+                                    <span class="detail-label">Updated Delivery:</span>
+                                    <span>${formatDate(order.updatedDeliveryDate)}</span>
+                                </div>
+                                <div class="detail-row text-danger">
+                                    <span class="detail-label">Delay Reason:</span>
+                                    <span>${order.delayReason}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        tooltipContent += `
+                            <div class="detail-row">
+                                <span class="detail-label">Actual Delivery:</span>
+                                <span>${formatDate(order.actualDeliveryDate)}</span>
+                            </div>
+                        `;
+                    }
+                    
+                    tooltipContent += `</div>`;
+                    
+                    // Add event timeline if events exist
+                    if (locationEvents.length > 0) {
+                        tooltipContent += `
+                            <div class="mt-2">
+                                <h5 class="font-semibold text-sm mb-1">Timeline at this location:</h5>
+                                <div class="timeline">
+                        `;
+                        
+                        locationEvents.forEach(event => {
+                            const delayClass = event.isDelay ? 'delay' : '';
+                            tooltipContent += `
+                                <div class="timeline-item ${delayClass}">
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">${formatDate(event.date)}</div>
+                                    <div class="text-sm">${event.event}</div>
+                                </div>
+                            `;
+                        });
+                        
+                        tooltipContent += `</div></div>`;
+                    }
+                    
+                    tooltipContent += `</div>`;
+                });
+            } else {
+                tooltipContent += `<p>No active orders at this location</p>`;
+            }
+            
+            tooltipContent += `</div>`;
+            
+            // Add tooltip to marker
+            const tooltip = L.tooltip({
+                direction: 'top',
+                permanent: false,
+                className: 'info-tooltip',
+                offset: [0, -10],
+                opacity: 0.9
+            }).setContent(tooltipContent);
+            
+            // Show tooltip on hover
+            marker.on('mouseover', function() {
+                this.bindTooltip(tooltip).openTooltip();
+            });
+            
+            // For mobile support, also show tooltip on click
+            marker.on('click', function() {
+                this.bindTooltip(tooltip).openTooltip();
+            });
+        });
+
+        // Create route collections for each order
+        const orderRoutes = {};
+        
+        // Draw shipping routes with connecting route arcs - explicitly define each route
+        orderData.forEach(order => {
+            let routeSegments = [];
+            
+            if (order.PI === "1007988897") {
+                // Order 1: Cai Mep Port → Charleston → Huntersville
+                const caiMepPort = portData.find(port => port.name === "Cai Mep Port");
+                const charlestonPort = portData.find(port => port.name === "Port of Charleston");
+                const huntersvilleDest = portData.find(port => port.name === "Huntersville, NC");
+                
+                if (caiMepPort && charlestonPort) {
+                    // 1. Sea route: Cai Mep → Charleston
+                    const seaRoute = L.polyline([caiMepPort.location, charlestonPort.location], {
+                        color: '#5D5CDE', // Blue for sea route
+                        weight: 2,
+                        opacity: 0.7,
+                        dashArray: '5, 5',
+                        className: `route-${order.PI}`
+                    }).addTo(routeLines);
+                    routeSegments.push(seaRoute);
+                }
+                
+                if (charlestonPort && huntersvilleDest) {
+                    // 2. Land route: Charleston → Huntersville
+                    const landRoute = L.polyline([charlestonPort.location, huntersvilleDest.location], {
+                        color: '#10B981', // Green for land route
+                        weight: 2,
+                        opacity: 0.7,
+                        dashArray: '3, 5',
+                        className: `route-${order.PI}`
+                    }).addTo(routeLines);
+                    routeSegments.push(landRoute);
+                }
+            } 
+            else if (order.PI === "1007989785") {
+                // Order 2: Cai Mep Port → Long Beach → Dallas → Oklahoma City
+                const caiMepPort = portData.find(port => port.name === "Cai Mep Port");
+                const longBeachPort = portData.find(port => port.name === "Pacific Container Terminal, Long Beach");
+                const dallasRail = portData.find(port => port.type === "Rail Yard"); // This is the BNSF Railway in Dallas
+                const oklahomaDest = portData.find(port => port.name === "Oklahoma City, OK");
+                
+                if (caiMepPort && longBeachPort) {
+                    // 1. Sea route: Cai Mep → Long Beach
+                    const seaRoute = L.polyline([caiMepPort.location, longBeachPort.location], {
+                        color: '#5D5CDE', // Blue for sea route
+                        weight: 2,
+                        opacity: 0.7,
+                        dashArray: '5, 5',
+                        className: `route-${order.PI}`
+                    }).addTo(routeLines);
+                    routeSegments.push(seaRoute);
+                }
+                
+                if (longBeachPort && dallasRail) {
+                    // 2. Rail route: Long Beach → Dallas (BNSF Railway)
+                    const railRoute = L.polyline([longBeachPort.location, dallasRail.location], {
+                        color: '#F59E0B', // Orange for rail route
+                        weight: 2,
+                        opacity: 0.7,
+                        dashArray: '3, 5',
+                        className: `route-${order.PI}`
+                    }).addTo(routeLines);
+                    routeSegments.push(railRoute);
+                }
+                
+                if (dallasRail && oklahomaDest) {
+                    // 3. Land route: Dallas → Oklahoma City
+                    const landRoute = L.polyline([dallasRail.location, oklahomaDest.location], {
+                        color: '#10B981', // Green for land route
+                        weight: 2,
+                        opacity: 0.7,
+                        dashArray: '3, 5',
+                        className: `route-${order.PI}`
+                    }).addTo(routeLines);
+                    routeSegments.push(landRoute);
+                }
+            }
+            
+            // Store route segments for this order
+            orderRoutes[order.PI] = routeSegments;
+        });
+
+        // Utility function to format dates
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            
+            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+            let date;
+            
+            // Handle different date formats
+            if (dateString.includes('@')) {
+                // Format like "2024/11/7  @ 9:00 AM"
+                const parts = dateString.split('@');
+                const datePart = parts[0].trim();
+                const timePart = parts[1].trim();
+                
+                // Parse date part
+                const dateComponents = datePart.split('/');
+                date = new Date(
+                    parseInt(dateComponents[0]), 
+                    parseInt(dateComponents[1]) - 1, 
+                    parseInt(dateComponents[2])
+                );
+                
+                return `${date.toLocaleDateString('en-US', options)} @ ${timePart}`;
+            } else {
+                // Standard date format
+                date = new Date(dateString);
+                return date.toLocaleDateString('en-US', options);
+            }
+        }
+
+        // Add route highlighting functionality with animation and marker filtering
+        function highlightOrderRoute(orderID) {
+            // Get all route paths
+            const allRoutes = document.querySelectorAll('.leaflet-overlay-pane path');
+            
+            // Hide all routes completely and remove animations
+            allRoutes.forEach(route => {
+                route.style.opacity = '0';
+                route.style.visibility = 'hidden';
+                route.style.animation = 'none';
+                route.style.strokeDashoffset = '0';
+                route.classList.remove('route-animated');
+            });
+            
+            // Show or hide actual marker DOM elements
+            portData.forEach(port => {
+                // Find the marker for this port
+                const marker = portMarkers.getLayers().find(layer => {
+                    return (
+                        layer.getLatLng().lat === port.location[0] && 
+                        layer.getLatLng().lng === port.location[1]
+                    );
+                });
+                
+                if (!marker) return;
+                
+                // For "all" selection, show all markers
+                if (orderID === 'all') {
+                    if (!map.hasLayer(marker)) {
+                        marker.addTo(map);
+                    }
+                    
+                    // Reset marker style
+                    const iconElement = marker._icon;
+                    if (iconElement) {
+                        iconElement.style.boxShadow = 'none';
+                        iconElement.style.animation = 'none';
+                        iconElement.style.opacity = '1';
+                        iconElement.style.zIndex = '1';
+                    }
+                } 
+                // For specific order selection, only show markers in that order's route
+                else {
+                    const isInRoute = port.orders.includes(orderID);
+                    
+                    if (isInRoute) {
+                        // Show and highlight the marker
+                        if (!map.hasLayer(marker)) {
+                            marker.addTo(map);
+                        }
+                        
+                        // Highlight the marker
+                        const iconElement = marker._icon;
+                        if (iconElement) {
+                            iconElement.style.boxShadow = '0 0 8px 2px rgba(93, 92, 222, 0.8)';
+                            iconElement.style.animation = 'glow 2s ease-in-out infinite';
+                            iconElement.style.opacity = '1';
+                            iconElement.style.zIndex = '1000';
+                        }
+                    } else {
+                        // Remove marker from map
+                        if (map.hasLayer(marker)) {
+                            map.removeLayer(marker);
+                        }
+                    }
+                }
+            });
+            
+            // If we want to show all routes
+            if (orderID === 'all') {
+                // Show all routes
+                allRoutes.forEach(route => {
+                    route.style.opacity = '0.7';
+                    route.style.visibility = 'visible';
+                    route.style.weight = '2';
+                });
+                return;
+            }
+            
+            // Highlight only the specific order's routes
+            const orderRoutes = document.querySelectorAll(`.route-${orderID}`);
+            
+            // Reset marker connections (used to highlight connections between markers)
+            const markerConnections = document.querySelectorAll('.marker-connection');
+            if (markerConnections) {
+                markerConnections.forEach(el => el.remove());
+            }
+            
+            orderRoutes.forEach(route => {
+                route.style.opacity = '1';
+                route.style.visibility = 'visible';
+                route.style.weight = '3';
+                route.style.zIndex = '1000';
+                
+                // Add animation to the route
+                route.classList.add('route-animated');
+                
+                // Set different animation directions based on route type
+                const routeColor = window.getComputedStyle(route).getPropertyValue('stroke');
+                if (routeColor.includes('93, 92, 222') || routeColor.includes('#5D5CDE')) {
+                    // Sea route (blue) - forward animation
+                    route.style.animation = 'dash 1.5s linear infinite, pulse 2s ease-in-out infinite';
+                    route.style.strokeDashoffset = '-20';
+                } else if (routeColor.includes('245, 158, 11') || routeColor.includes('#F59E0B')) {
+                    // Rail route (orange) - faster animation
+                    route.style.animation = 'dash 1s linear infinite, pulse 2s ease-in-out infinite';
+                    route.style.strokeDashoffset = '-20';
+                } else {
+                    // Delivery route (green) - quick animation
+                    route.style.animation = 'dash 0.8s linear infinite, pulse 2s ease-in-out infinite';
+                    route.style.strokeDashoffset = '-20';
+                }
+            });
+        }
+        
+        // Set up buttons for routing
+        document.getElementById('order-all').addEventListener('click', function() {
+            // Update active button state
+            document.querySelectorAll('[id^="order-"]').forEach(btn => {
+                btn.classList.remove('bg-primary', 'text-white');
+                btn.classList.add('bg-gray-200', 'dark:bg-gray-700');
+            });
+            this.classList.add('bg-primary', 'text-white');
+            this.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+            
+            // Show all routes
+            highlightOrderRoute('all');
+        });
+        
+        document.getElementById('order-1007988897').addEventListener('click', function() {
+            // Update active button state
+            document.querySelectorAll('[id^="order-"]').forEach(btn => {
+                btn.classList.remove('bg-primary', 'text-white');
+                btn.classList.add('bg-gray-200', 'dark:bg-gray-700');
+            });
+            this.classList.add('bg-primary', 'text-white');
+            this.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+            
+            // Highlight just this order's route
+            highlightOrderRoute('1007988897');
+            
+            // Pan map to fit route points
+            const polLocation = portData.find(port => port.name.includes('Cai Mep'))?.location;
+            const podLocation = portData.find(port => port.name.includes('Charleston'))?.location;
+            const destLocation = portData.find(port => port.name.includes('Huntersville'))?.location;
+            
+            if (polLocation && podLocation && destLocation) {
+                const bounds = L.latLngBounds([polLocation, podLocation, destLocation]);
+                map.flyToBounds(bounds, { padding: [50, 50] });
+            }
+        });
+        
+        document.getElementById('order-1007989785').addEventListener('click', function() {
+            // Update active button state
+            document.querySelectorAll('[id^="order-"]').forEach(btn => {
+                btn.classList.remove('bg-primary', 'text-white');
+                btn.classList.add('bg-gray-200', 'dark:bg-gray-700');
+            });
+            this.classList.add('bg-primary', 'text-white');
+            this.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+            
+            // Highlight just this order's route
+            highlightOrderRoute('1007989785');
+            
+            // Pan map to fit route points
+            const polLocation = portData.find(port => port.name.includes('Cai Mep'))?.location;
+            const podLocation = portData.find(port => port.name.includes('Long Beach'))?.location;
+            const railLocation = portData.find(port => port.type === "Rail Yard")?.location;
+            const destLocation = portData.find(port => port.name.includes('Oklahoma'))?.location;
+            
+            if (polLocation && podLocation && railLocation && destLocation) {
+                const bounds = L.latLngBounds([polLocation, podLocation, railLocation, destLocation]);
+                map.flyToBounds(bounds, { padding: [50, 50] });
+            }
+        });
+        
+        // Responsive handling
+        window.addEventListener('resize', function() {
+            map.invalidateSize();
+        });
+    </script>
+</body>
+</html>
